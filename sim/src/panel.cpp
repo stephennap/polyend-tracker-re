@@ -1,6 +1,6 @@
 #include "panel.h"
 
-#include <strings.h>
+#include "portable.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -75,7 +75,7 @@ const ButtonInfo* buttonTable(int* count) {
 int buttonByName(const char* name) {
     if (!name || !*name) return -1;
     for (const auto& bi : kButtons)
-        if (::strcasecmp(bi.name, name) == 0 || ::strcasecmp(bi.label, name) == 0) return bi.id;
+        if (strcaseCmp(bi.name, name) == 0 || strcaseCmp(bi.label, name) == 0) return bi.id;
     char* end = nullptr;
     const long v = std::strtol(name, &end, 0);
     if (end && *end == 0 && v >= 0 && v < 64) return int(v);

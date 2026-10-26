@@ -50,10 +50,17 @@
 // A check line may carry its own @tags (e.g. @font: depends on font metrics,
 // @content: depends on project content that differs from the stock card).
 // RGB is RRGGBB hex or r,g,b. Coordinates are inclusive.
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -459,6 +466,39 @@ void copyCard(const fs::path& src, const fs::path& dst) {
     }
 }
 
+#ifdef _WIN32
+// Windows: CreateProcess with stdout/stderr to the log; the SDL dummy drivers
+// go in through the inherited environment.
+bool runSim(const std::string& sim, const fs::path& card, const fs::path& script, const fs::path& png,
+            const fs::path& log) {
+    SetEnvironmentVariableW(L"SDL_VIDEODRIVER", L"dummy");
+    SetEnvironmentVariableW(L"SDL_AUDIODRIVER", L"dummy");
+    SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
+    HANDLE lf = CreateFileW(log.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, nullptr);
+    auto q = [](const std::wstring& a) { return L"\"" + a + L"\""; };
+    std::wstring cmd = q(fs::path(sim).wstring()) + L" --no-midi --no-audio --sd " + q(card.wstring()) +
+                       L" --script " + q(script.wstring()) + L" --screenshot " + q(png.wstring());
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    if (lf != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = lf;
+        si.hStdError = lf;
+    }
+    PROCESS_INFORMATION pi{};
+    const BOOL ok = CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
+    if (lf != INVALID_HANDLE_VALUE) CloseHandle(lf);
+    if (!ok) return false;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return code == 0;
+}
+#else
 bool runSim(const std::string& sim, const fs::path& card, const fs::path& script, const fs::path& png,
             const fs::path& log) {
     const pid_t pid = fork();
@@ -480,6 +520,7 @@ bool runSim(const std::string& sim, const fs::path& card, const fs::path& script
     waitpid(pid, &st, 0);
     return WIFEXITED(st) && WEXITSTATUS(st) == 0;
 }
+#endif
 
 bool fileContains(const fs::path& p, const std::string& needle) {
     std::ifstream f(p, std::ios::binary);
@@ -550,13 +591,13 @@ void writeDiff(const fs::path& out, const Image& im, const Image& ref, const std
         for (int x = x0; x <= x1; ++x) put(x, y0), put(x, y1);
         for (int y = y0; y <= y1; ++y) put(x0, y), put(x1, y);
     }
-    sim::writePng(out.c_str(), px.data(), kW, kH);
+    sim::writePng(out.string().c_str(), px.data(), kW, kH);
 }
 
 void writeImage(const fs::path& out, const Image& im) {
     std::vector<uint32_t> px(im.px.size());
     for (size_t i = 0; i < px.size(); ++i) px[i] = 0xFF000000u | im.px[i];
-    sim::writePng(out.c_str(), px.data(), im.w, im.h);
+    sim::writePng(out.string().c_str(), px.data(), im.w, im.h);
 }
 
 void usage() {

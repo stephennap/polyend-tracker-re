@@ -6,6 +6,8 @@
 //   opentracker-sim --script FILE [--screenshot OUT.png] [--panel] [--wav OUT.wav] [--sd DIR]
 //
 // See sim/README.md for the key map and the script language.
+// SDL must not replace main() (no SDL2main / WinMain on Windows).
+#define SDL_MAIN_HANDLED
 #include <SDL.h>
 
 #include <algorithm>
@@ -47,6 +49,8 @@ struct Options {
     bool romFonts = false, romText = false;   // OP-6 checks (also OT_SIM_ROM_FONTS / OT_SIM_ROM_TEXT = 1)
     bool busyDisplay = true;                  // FT81x pacing model (off: --instant-display / OT_SIM_BUSY = 0)
     std::string script, screenshot, wav;
+    std::string midiIn, midiOut;   // Windows: MIDI device name substrings
+    bool listMidi = false;
     float lineInTone = 0.0f;   // headless: synthetic line input (Hz), 0 = none
     long quitAfterMs = -1;
 };
@@ -58,7 +62,10 @@ void usage() {
         "  --scale N         window scale 1 or 2 (default 1)\n"
         "  --line-in         open the default capture device as line-in\n"
         "  --no-audio        do not open an audio device\n"
-        "  --no-midi         do not create ALSA MIDI ports\n"
+        "  --no-midi         do not open MIDI (ALSA ports on Linux, devices on Windows)\n"
+        "  --midi-in NAME    Windows: MIDI input device whose name contains NAME\n"
+        "  --midi-out NAME   Windows: MIDI output device whose name contains NAME\n"
+        "  --list-midi       print the MIDI devices and exit\n"
         "  --demo            renderer/input demo instead of the app\n"
         "  --quit-after MS   exit after MS milliseconds (interactive mode)\n"
         "headless (no window, virtual time):\n"
@@ -87,6 +94,9 @@ bool parseArgs(int argc, char** argv, Options& o) {
         if (a == "--line-in") { o.lineIn = true; continue; }
         if (a == "--no-audio") { o.noAudio = true; continue; }
         if (a == "--no-midi") { o.noMidi = true; continue; }
+        if (a == "--list-midi") { o.listMidi = true; continue; }
+        if (a == "--midi-in" && next(o.midiIn)) continue;
+        if (a == "--midi-out" && next(o.midiOut)) continue;
         if (a == "--demo") { o.demo = true; continue; }
         if (a == "--panel") { o.panelShot = true; continue; }
         if (a == "--rom-fonts") { o.romFonts = true; continue; }
@@ -108,8 +118,14 @@ bool parseArgs(int argc, char** argv, Options& o) {
     if (const char* e = std::getenv("OT_SIM_BUSY")) o.busyDisplay = o.busyDisplay && std::atoi(e) != 0;
     if (const char* e = std::getenv("OT_SIM_ROM_TEXT")) o.romText = o.romText || std::atoi(e) == 1;
     if (o.sd.empty()) {
+#ifdef _WIN32
+        // USERPROFILE first: under MSYS2, HOME can be a POSIX-style path.
+        const char* home = std::getenv("USERPROFILE");
+        if (!home || !*home) home = std::getenv("HOME");
+#else
         const char* home = std::getenv("HOME");
-        o.sd = std::string(home ? home : ".") + "/.opentracker-sd";
+#endif
+        o.sd = std::string(home && *home ? home : ".") + "/.opentracker-sd";
     }
     return true;
 }
@@ -172,7 +188,7 @@ struct Machine {
             std::fprintf(stderr, "cannot use SD folder %s\n", o.sd.c_str());
             return false;
         }
-        if (!o.noMidi && !headless) midi.open();
+        if (!o.noMidi && !headless) midi.open(o.midiIn, o.midiOut);
         if (headless) {
             audio = &manualAudio;
             if (!o.wav.empty() && !manualAudio.recordWav(o.wav.c_str()))
@@ -195,7 +211,7 @@ struct Machine {
         scratch.assign(64 * 1024, 0);
         perfPatterns.reset(new ot::PerfPatternMemory);
         std::string sdPath = o.sd;
-        while (sdPath.size() > 1 && sdPath.back() == '/') sdPath.pop_back();
+        while (sdPath.size() > 1 && (sdPath.back() == '/' || sdPath.back() == '\\')) sdPath.pop_back();
         nvstore.open(sdPath + ".eeprom");
 
         ot::HalRefs h;
@@ -977,7 +993,7 @@ int runInteractive(Machine& m, const Options& o) {
                                                                   : "COMMAND mode (digits = module keys)") +
                                  "\nTab toggles key mode; right-click latches a button\nSD card: " +
                                  m.storage.root() + "\nMIDI: " +
-                                 (m.midi.active() ? "ALSA ports OpenTracker DIN/USB" : "off") +
+                                 (m.midi.active() ? m.midi.describe() : std::string("off")) +
                                  "\nAudio: " + (m.audio ? "44100 Hz (device: 44117.6 Hz)" : "off") +
                                  "\nCtrl+Q quits";
             panel.draw(canvas, fb.data(), m.input, m.leds, latched, status);
@@ -1000,8 +1016,13 @@ int runInteractive(Machine& m, const Options& o) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    SDL_SetMainReady();
     Options o;
     if (!parseArgs(argc, argv, o)) return 2;
+    if (o.listMidi) {
+        HostMidi::listDevices();
+        return 0;
+    }
     const bool headless = !o.script.empty() || !o.screenshot.empty();
     Machine m;
     m.display.setRomFontsOnly(o.romFonts);

@@ -11,11 +11,18 @@ SONGS    ?=
 CXXFLAGS := -std=c++17 -O2 -g -Wall -Wextra -Wno-format-truncation -MMD \
             -I$(ROOT)/src/core -I$(ROOT)/src -I$(ROOT)/sim/src
 
+ifeq ($(OS),Windows_NT)
+# MSYS2 MinGW: M_PI is hidden under -std=c++17 unless asked for.
+EXE      := .exe
+CXXFLAGS += -D_USE_MATH_DEFINES
+LDFLAGS  := -static
+endif
+
 CORE_SRCS := $(shell find $(ROOT)/src/core -name '*.cpp')
 CORE_OBJS := $(patsubst $(ROOT)/src/%.cpp,$(OUT)/obj/%.o,$(CORE_SRCS))
 TOOL_OBJS := $(OUT)/obj/tool/main.o $(OUT)/obj/tool/testsongs.o $(OUT)/obj/tool/stock_check.o \
              $(OUT)/obj/host_storage.o
-BIN       := $(OUT)/make_testsongs
+BIN       := $(OUT)/make_testsongs$(EXE)
 
 all: $(BIN)
 
@@ -32,7 +39,7 @@ $(OUT)/obj/host_storage.o: $(ROOT)/sim/src/host_storage.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BIN): $(CORE_OBJS) $(TOOL_OBJS)
-	$(CXX) $^ -lpthread -o $@
+	$(CXX) $(LDFLAGS) $^ -lpthread -o $@
 
 # Fresh card folder each run (stale songs from an older build must not
 # linger). Only Projects/<name>/ and the source WAVs under Samples/ are meant

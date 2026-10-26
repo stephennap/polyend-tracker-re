@@ -2,27 +2,42 @@
 #   make -C sim          -> build/sim/opentracker-sim
 #   make -C sim fonts    -> regenerate third_party/rom_fonts.inc (needs python3 + Pillow;
 #                           `make fonts` in reimpl/ also regenerates the UI fonts)
+# Windows: run from an MSYS2 UCRT64 shell (see README.md); the result is one
+# static build/sim/opentracker-sim.exe with WinMM MIDI.
 CXX      ?= g++
 ROOT     := ..
 OUT      := $(ROOT)/build/sim
+ifeq ($(OS),Windows_NT)
+# MSYS2 MinGW: static exe (no DLLs next to it), console subsystem so the
+# stderr log stays visible, no SDL2main (main.cpp sets SDL_MAIN_HANDLED).
+EXE        := .exe
+SDL_CFLAGS := $(filter-out -Dmain=SDL_main,$(shell pkg-config --cflags sdl2))
+SDL_LIBS   := $(filter-out -mwindows -lSDL2main,$(shell pkg-config --static --libs sdl2))
+HOST_LDFLAGS := -static
+HOST_LIBS  := -lwinmm
+else
+EXE        :=
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2)
 SDL_LIBS   := $(shell pkg-config --libs sdl2)
+HOST_LDFLAGS :=
+HOST_LIBS  := -lpthread
 HAVE_ALSA  := $(shell pkg-config --exists alsa && echo 1)
+endif
 ifeq ($(HAVE_ALSA),1)
 ALSA_CFLAGS := -DOT_SIM_ALSA $(shell pkg-config --cflags alsa)
 ALSA_LIBS   := $(shell pkg-config --libs alsa)
 endif
 CXXFLAGS := -std=c++17 -O2 -g -Wall -Wextra -Wno-format-truncation -MMD -I$(ROOT)/src/core -I$(ROOT)/src -Isrc \
             $(SDL_CFLAGS) $(ALSA_CFLAGS)
-LDLIBS   := $(SDL_LIBS) $(ALSA_LIBS) -lpthread
+LDLIBS   := $(SDL_LIBS) $(ALSA_LIBS) $(HOST_LIBS)
 
 CORE_SRCS := $(shell find $(ROOT)/src/core -name '*.cpp')
 CORE_OBJS := $(patsubst $(ROOT)/src/%.cpp,$(OUT)/obj/%.o,$(CORE_SRCS))
 SIM_SRCS  := $(wildcard src/*.cpp)
 SIM_OBJS  := $(patsubst src/%.cpp,$(OUT)/obj/sim/%.o,$(SIM_SRCS))
-BIN       := $(OUT)/opentracker-sim
+BIN       := $(OUT)/opentracker-sim$(EXE)
 # Image-path check (sim only): SwDisplay + HostStorage, no SDL window.
-JPEG_CHECK      := $(OUT)/jpeg-check
+JPEG_CHECK      := $(OUT)/jpeg-check$(EXE)
 JPEG_CHECK_OBJS := $(OUT)/obj/sim/check/jpeg_check.o $(addprefix $(OUT)/obj/sim/,sw_display.o canvas.o jpeg_decode.o host_storage.o png.o) \
                    $(OUT)/obj/core/ui/fonts/fonts.o
 # Visual-diff gate (docs/VISUAL_DIFF_1.9.4.md): replays visual/*.scene in the
@@ -34,7 +49,7 @@ JPEG_CHECK_OBJS := $(OUT)/obj/sim/check/jpeg_check.o $(addprefix $(OUT)/obj/sim/
 # the project for scenes without that line (default: the SD fixture's own
 # Workspace). STOCK or SD missing = skip; a missing project skips its scenes.
 # Paths are relative to reimpl/sim.
-VISUAL_DIFF      := $(OUT)/visual-diff
+VISUAL_DIFF      := $(OUT)/visual-diff$(EXE)
 VISUAL_DIFF_OBJS := $(OUT)/obj/sim/check/visual_diff.o $(OUT)/obj/sim/png.o
 STOCK      ?= ../../../ReversedPolytracker/fixtures/stock-snapshots-1.9.2
 SD         ?= ../../../ReversedPolytracker/fixtures/sdcard-backup-2026-10-15
@@ -57,13 +72,13 @@ $(OUT)/obj/sim/check/%.o: check/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(JPEG_CHECK): $(JPEG_CHECK_OBJS)
-	$(CXX) $^ -o $@
+	$(CXX) $(HOST_LDFLAGS) $^ -o $@
 
 $(VISUAL_DIFF): $(VISUAL_DIFF_OBJS)
-	$(CXX) $^ -o $@
+	$(CXX) $(HOST_LDFLAGS) $^ -o $@
 
 $(BIN): $(CORE_OBJS) $(SIM_OBJS)
-	$(CXX) $^ $(LDLIBS) -o $@
+	$(CXX) $(HOST_LDFLAGS) $^ $(LDLIBS) -o $@
 
 fonts:
 	python3 -I $(ROOT)/tools/fonts/gen_fonts.py rom /usr/share/fonts/TTF/DejaVuSans.ttf \

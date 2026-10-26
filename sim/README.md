@@ -1,7 +1,7 @@
 # OpenTracker desktop simulator
 
 Runs the same platform-independent core (`src/core/**`, unchanged) as the
-device firmware, on Linux, with host implementations of the HAL interfaces in
+device firmware, on Linux and Windows, with host implementations of the HAL interfaces in
 `src/core/hal_api.h`. Nothing in `src/core` or `src/hal` is modified for it.
 
 ## Build and run
@@ -15,6 +15,45 @@ reimpl/build/sim/opentracker-sim   # opens the window
 make -C reimpl/sim check           # headless smoke test -> build/sim/smoke*.png
 ```
 
+### Windows (MSYS2)
+
+Builds with MSYS2's UCRT64 GCC. The result, `build/sim/opentracker-sim.exe`,
+is linked statically: it needs no DLLs and runs from PowerShell, cmd or
+Explorer.
+
+1. Install MSYS2 (https://www.msys2.org, or `winget install MSYS2.MSYS2`).
+2. In the **MSYS2 UCRT64** shell:
+
+   ```
+   pacman -S --needed make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-pkgconf
+   make -C sim -j                     # -> build/sim/opentracker-sim.exe
+   make -C sim check                  # same headless checks as on Linux
+   ```
+
+   Or from PowerShell, without opening the MSYS2 shell: `sim\build-windows.ps1`
+   (passes its arguments to make, e.g. `sim\build-windows.ps1 check`).
+3. Run `build\sim\opentracker-sim.exe`. The default SD card folder is
+   `%USERPROFILE%\.opentracker-sd`.
+
+Clone with LF line endings (`git config core.autocrlf false` before the
+checkout, or `git clone -c core.autocrlf=false ...`): the check scripts are
+`sh` scripts. `.gitattributes` keeps `*.sh` at LF either way.
+
+MIDI on Windows uses WinMM. Windows has no virtual MIDI ports, so the
+simulator opens existing devices by name, and they act as the app's **USB**
+MIDI port (the DIN port is not connected):
+
+```
+build\sim\opentracker-sim.exe --list-midi
+build\sim\opentracker-sim.exe --midi-in "KeyStep" --midi-out "KeyStep"
+```
+
+`NAME` matches the device name exactly or as a case-insensitive substring.
+A device can only be open in one program at a time; close the DAW first, or
+use a loopback driver such as [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+to connect the simulator to a DAW on the same PC. Without `--midi-in` /
+`--midi-out` MIDI is off.
+
 `check` first runs `build/sim/jpeg-check` (sources in `check/`): it loads
 `fixtures/cover.jpg` through `SwDisplay::loadJpeg` into the RAM_G model at the
 cover address (spec 13 §I.3), draws it with `drawImage` and checks the pixels and
@@ -25,11 +64,13 @@ Options:
 
 | option | meaning |
 |---|---|
-| `--sd DIR` | SD card root folder (default `~/.opentracker-sd`, created on first run) |
+| `--sd DIR` | SD card root folder (default `~/.opentracker-sd`, on Windows `%USERPROFILE%\.opentracker-sd`; created on first run) |
 | `--scale 1\|2` | window scale (the window is also resizable) |
 | `--line-in` | open the default capture device as line-in (off by default) |
 | `--line-in-tone HZ` | synthetic line input (tone bursts), e.g. to test the Sample Recorder headless |
-| `--no-audio` / `--no-midi` | skip the audio device / ALSA ports |
+| `--no-audio` / `--no-midi` | skip the audio device / MIDI |
+| `--midi-in NAME` / `--midi-out NAME` | Windows: MIDI devices for the app's USB MIDI port |
+| `--list-midi` | print the MIDI devices and exit |
 | `--demo` | renderer and input demo instead of the app |
 | `--quit-after MS` | exit after MS milliseconds |
 | `--script FILE` | headless: replay a script (see below) |
@@ -175,8 +216,8 @@ expect-playhead on|off      fail unless Sample Playback does (not) draw its play
 |---|---|
 | `IDisplay` | `src/sw_display.*`: software FT81x renderer (see below) |
 | `IAudioOut` | `src/sdl_audio.*`: SDL2 audio, 44100 Hz stereo int16, 128-frame blocks pulled on the SDL audio thread |
-| `IStorage` | `src/host_storage.*`: host folder as card root, case-insensitive lookups like FAT, max 32 open files |
-| `IMidiPort` | `src/host_midi.*`: ALSA sequencer client "OpenTracker", ports "OpenTracker DIN" / "OpenTracker USB" (connect with `aconnect` or a DAW); null port without ALSA |
+| `IStorage` | `src/host_storage.*`: host folder as card root (`std::filesystem`, UTF-8 names), case-insensitive lookups like FAT, max 32 open files |
+| `IMidiPort` | `src/host_midi.*`: ALSA sequencer client "OpenTracker", ports "OpenTracker DIN" / "OpenTracker USB" (connect with `aconnect` or a DAW); on Windows WinMM devices chosen with `--midi-in` / `--midi-out` as the USB port; null port otherwise |
 | `IInput` | `src/host_hal.*`: event queue from mouse/keyboard/script |
 | `ILeds` | `src/host_hal.*`: pad colours shown on the panel after `show()` |
 | `IClock` | `src/host_hal.*`: `std::chrono::steady_clock` (virtual in headless mode) |

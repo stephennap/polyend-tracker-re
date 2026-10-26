@@ -1,36 +1,41 @@
 #include "host_storage.h"
 
-#include <dirent.h>
-#include <strings.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
+#include <system_error>
 #include <vector>
+
+#include "portable.h"
+
+namespace fs = std::filesystem;
 
 namespace sim {
 
 namespace {
 bool isDir(const std::string& p) {
-    struct stat st;
-    return ::stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+    std::error_code ec;
+    return fs::is_directory(u8Path(p), ec);
 }
-bool pathExists(const std::string& p) {
-    struct stat st;
-    return ::stat(p.c_str(), &st) == 0;
+[[maybe_unused]] bool pathExists(const std::string& p) {   // case-sensitive hosts only
+    std::error_code ec;
+    return fs::exists(u8Path(p), ec);
 }
 bool mkdirs(const std::string& p) {
     if (p.empty() || isDir(p)) return true;
-    const size_t slash = p.find_last_of('/');
-    if (slash != std::string::npos && slash > 0 && !mkdirs(p.substr(0, slash))) return false;
-    return ::mkdir(p.c_str(), 0755) == 0 || isDir(p);
+    std::error_code ec;
+    fs::create_directories(u8Path(p), ec);
+    return isDir(p);
+}
+bool makeDir(const std::string& p) {
+    std::error_code ec;
+    return fs::create_directory(u8Path(p), ec) || isDir(p);
 }
 }  // namespace
 
 bool HostStorage::init(const std::string& root) {
     root_ = root;
-    while (root_.size() > 1 && root_.back() == '/') root_.pop_back();
+    while (root_.size() > 1 && (root_.back() == '/' || root_.back() == '\\')) root_.pop_back();
     return mkdirs(root_) && isDir(root_);
 }
 
@@ -50,22 +55,26 @@ bool HostStorage::resolve(const char* path, std::string& out, bool* existsOut) c
         if (comp == "..") return false;   // not on a FAT card root
         if (!exists) return false;        // missing intermediate directory
         std::string cand = out + "/" + comp;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        // Case-sensitive host FS: an existing path is the exact name.
         if (pathExists(cand)) {
             out = cand;
             continue;
         }
-        // FAT semantics: case-insensitive match.
+#endif
+        // FAT semantics: case-insensitive match. On a case-insensitive host FS
+        // (Windows, macOS) this also picks up the on-disk spelling, so two
+        // spellings of one card path resolve to the same host path.
         bool found = false;
-        if (DIR* d = ::opendir(out.c_str())) {
-            while (dirent* e = ::readdir(d)) {
-                if (::strcasecmp(e->d_name, comp.c_str()) == 0) {
-                    out += "/";
-                    out += e->d_name;
-                    found = true;
-                    break;
-                }
+        std::error_code ec;
+        for (fs::directory_iterator it(u8Path(out), ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string n = pathU8(it->path().filename());
+            if (strcaseCmp(n.c_str(), comp.c_str()) == 0) {
+                out += "/";
+                out += n;
+                found = true;
+                break;
             }
-            ::closedir(d);
         }
         if (!found) {
             out = cand;
@@ -88,9 +97,9 @@ ot::IStorage::Handle HostStorage::open(const char* path, OpenMode mode) {
     if (slot < 0) return -1;
     std::FILE* f = nullptr;
     switch (mode) {
-        case kRead: f = ex ? std::fopen(hp.c_str(), "rb") : nullptr; break;
-        case kWrite: f = std::fopen(hp.c_str(), "wb"); break;
-        case kReadWrite: f = std::fopen(hp.c_str(), ex ? "r+b" : "w+b"); break;
+        case kRead: f = ex ? openFile(hp, "rb") : nullptr; break;
+        case kWrite: f = openFile(hp, "wb"); break;
+        case kReadWrite: f = openFile(hp, ex ? "r+b" : "w+b"); break;
     }
     if (!f) return -1;
     files_[slot] = f;
@@ -127,10 +136,12 @@ int32_t HostStorage::size(Handle h) {
     if (refuse()) return -1;
     std::FILE* f = get(h);
     if (!f) return -1;
-    std::fflush(f);
-    struct stat st;
-    if (::fstat(::fileno(f), &st) != 0) return -1;
-    return int32_t(st.st_size);
+    // Card files are < 2 GiB (FAT32 / int32_t sizes), so long is enough everywhere.
+    const long cur = std::ftell(f);
+    if (cur < 0 || std::fseek(f, 0, SEEK_END) != 0) return -1;
+    const long end = std::ftell(f);
+    std::fseek(f, cur, SEEK_SET);
+    return end < 0 ? -1 : int32_t(end);
 }
 
 void HostStorage::close(Handle h) {
@@ -154,7 +165,7 @@ bool HostStorage::mkdir(const char* path) {
     bool ex = false;
     if (!resolve(path, hp, &ex)) return false;
     if (ex) return isDir(hp);
-    return ::mkdir(hp.c_str(), 0755) == 0 || isDir(hp);
+    return makeDir(hp);
 }
 
 bool HostStorage::remove(const char* path) {
@@ -162,7 +173,9 @@ bool HostStorage::remove(const char* path) {
     std::string hp;
     bool ex = false;
     if (!resolve(path, hp, &ex) || !ex || hp == root_) return false;
-    return isDir(hp) ? ::rmdir(hp.c_str()) == 0 : ::unlink(hp.c_str()) == 0;
+    // Files, or empty directories only (like f_unlink).
+    std::error_code ec;
+    return fs::remove(u8Path(hp), ec) && !ec;
 }
 
 bool HostStorage::rename(const char* from, const char* to) {
@@ -171,7 +184,9 @@ bool HostStorage::rename(const char* from, const char* to) {
     bool exA = false, exB = false;
     if (!resolve(from, a, &exA) || !exA || !resolve(to, b, &exB)) return false;
     if (exB && a != b) return false;   // FatFs f_rename fails if the target exists
-    return std::rename(a.c_str(), b.c_str()) == 0;
+    std::error_code ec;
+    fs::rename(u8Path(a), u8Path(b), ec);
+    return !ec;
 }
 
 int32_t HostStorage::listDir(const char* path, DirFn fn, void* ctx) {
@@ -185,17 +200,21 @@ int32_t HostStorage::listDir(const char* path, DirFn fn, void* ctx) {
         uint32_t size;
     };
     std::vector<Ent> ents;
-    if (DIR* d = ::opendir(hp.c_str())) {
-        while (dirent* e = ::readdir(d)) {
-            const std::string n = e->d_name;
-            if (n == "." || n == "..") continue;
-            struct stat st;
-            if (::stat((hp + "/" + n).c_str(), &st) != 0) continue;
-            ents.push_back({n, S_ISDIR(st.st_mode), S_ISDIR(st.st_mode) ? 0u : uint32_t(st.st_size)});
+    std::error_code ec;
+    fs::directory_iterator it(u8Path(hp), ec);
+    if (ec) return -1;
+    for (fs::directory_iterator end; it != end; it.increment(ec)) {
+        if (ec) break;
+        std::error_code e2;
+        const bool dir = it->is_directory(e2);
+        if (e2) continue;
+        uint32_t sz = 0;
+        if (!dir) {
+            const auto s = it->file_size(e2);
+            if (e2) continue;
+            sz = uint32_t(s);
         }
-        ::closedir(d);
-    } else {
-        return -1;
+        ents.push_back({pathU8(it->path().filename()), dir, sz});
     }
     std::sort(ents.begin(), ents.end(), [](const Ent& x, const Ent& y) { return x.name < y.name; });
     int32_t n = 0;
