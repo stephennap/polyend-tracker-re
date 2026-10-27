@@ -106,6 +106,10 @@ jobs:
         run: |
           # A static link: no libstdc++ / libwinpthread / SDL2 DLL next to them.
           for exe in opentracker-sim.exe OpenTracker.exe; do
+            if [ ! -f "build/sim/$exe" ]; then
+              echo "::error::build/sim/$exe was not built"
+              exit 1
+            fi
             if objdump -p "build/sim/$exe" | grep -iE "DLL Name: (lib|SDL)"; then
               echo "::error::$exe depends on a non-system DLL"
               exit 1

@@ -120,7 +120,7 @@ keyflow-check: $(BIN)
 # then the visual-diff gate (report-only until the 1.9.5 screens land: remove
 # the ALLOW_FAIL line below to make visual failures fail 'check').
 check: ALLOW_FAIL ?= 1
-check: $(BIN) $(JPEG_CHECK) visual-diff keyflow-check
+check: $(BIN) $(GUI_BIN) $(JPEG_CHECK) visual-diff keyflow-check
 	$(JPEG_CHECK) fixtures $(OUT)/jpeg-check.png
 	rm -rf $(OUT)/check-sd $(OUT)/check-sd.eeprom
 	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BIN) --sd $(OUT)/check-sd \
