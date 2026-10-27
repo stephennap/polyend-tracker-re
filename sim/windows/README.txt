@@ -9,13 +9,18 @@ Not affiliated with or endorsed by Polyend.
 
 Start
 -----
-Double-click OpenTracker.bat. It uses the "sd-card" folder next to it as the
+Double-click OpenTracker.exe. It uses the "sd-card" folder next to it as the
 Tracker's SD card, which already holds the OpenTracker test songs
-(File > Open Project).
+(File > Open Project). The workspace is saved to the card when you close
+the window.
 
-You can also run opentracker-sim.exe directly; it then uses
-%USERPROFILE%\.opentracker-sd as the card (created on first run). The
-workspace is saved to the card when you close the window.
+OpenTracker.exe opens no console window. Its messages go to
+sd-card.log next to it; look there if something does not work.
+
+opentracker-sim.exe is the same program for a terminal (Command Prompt or
+PowerShell): it prints its messages there and takes the options below.
+Both use the "sd-card" folder when it is next to them; without it, the card
+is %USERPROFILE%\.opentracker-sd (created on first run).
 
 Keys
 ----
@@ -40,7 +45,13 @@ MIDI
 List the devices:
     opentracker-sim.exe --list-midi
 Use one (the name can be part of the device name):
-    OpenTracker.bat --midi-in "KeyStep" --midi-out "KeyStep"
+    opentracker-sim.exe --midi-in "KeyStep" --midi-out "KeyStep"
+
+To start OpenTracker.exe with MIDI from a double-click, make a shortcut to
+it and add the options to the shortcut's Target, after the path.
+
+Then switch the Tracker's MIDI on in Config > MIDI (Notes in, MIDI out,
+Clock out ...: USB). They are all off by default.
 
 The device acts as the Tracker's USB MIDI port. A device can be open in
 only one program at a time. To connect to a DAW on the same PC, use a

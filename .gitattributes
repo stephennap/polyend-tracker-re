@@ -3,6 +3,5 @@
 *.sh text eol=lf
 sim/scripts/*.txt text eol=lf
 sim/visual/*.scene text eol=lf
-# Files shipped in the Windows package: CRLF for cmd.exe and Notepad.
-*.bat text eol=crlf
+# Shipped in the Windows package: CRLF for Notepad.
 sim/windows/README.txt text eol=crlf

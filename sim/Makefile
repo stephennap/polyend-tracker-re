@@ -2,8 +2,10 @@
 #   make -C sim          -> build/sim/opentracker-sim
 #   make -C sim fonts    -> regenerate third_party/rom_fonts.inc (needs python3 + Pillow;
 #                           `make fonts` in reimpl/ also regenerates the UI fonts)
-# Windows: run from an MSYS2 UCRT64 shell (see README.md); the result is one
-# static build/sim/opentracker-sim.exe with WinMM MIDI.
+# Windows: run from an MSYS2 UCRT64 shell (see README.md). Two static exes
+# from the same objects, both with WinMM MIDI:
+#   build/sim/opentracker-sim.exe  console program (logs in the terminal; checks)
+#   build/sim/OpenTracker.exe      windowed, no console; logs to "<sd>.log"
 CXX      ?= g++
 ROOT     := ..
 OUT      := $(ROOT)/build/sim
@@ -15,12 +17,14 @@ SDL_CFLAGS := $(filter-out -Dmain=SDL_main,$(shell pkg-config --cflags sdl2))
 SDL_LIBS   := $(filter-out -mwindows -lSDL2main,$(shell pkg-config --static --libs sdl2))
 HOST_LDFLAGS := -static
 HOST_LIBS  := -lwinmm
+GUI_BIN    := $(ROOT)/build/sim/OpenTracker.exe
 else
 EXE        :=
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2)
 SDL_LIBS   := $(shell pkg-config --libs sdl2)
 HOST_LDFLAGS :=
 HOST_LIBS  := -lpthread
+GUI_BIN    :=
 HAVE_ALSA  := $(shell pkg-config --exists alsa && echo 1)
 endif
 ifeq ($(HAVE_ALSA),1)
@@ -57,7 +61,7 @@ PROJECTS   ?= ../../../ReversedPolytracker/fixtures/stock-project
 PROJECT    ?=
 VISUAL_OUT ?= build/visual
 
-all: $(BIN)
+all: $(BIN) $(GUI_BIN)
 
 $(OUT)/obj/%.o: $(ROOT)/src/%.cpp
 	@mkdir -p $(dir $@)
@@ -79,6 +83,13 @@ $(VISUAL_DIFF): $(VISUAL_DIFF_OBJS)
 
 $(BIN): $(CORE_OBJS) $(SIM_OBJS)
 	$(CXX) $(HOST_LDFLAGS) $^ $(LDLIBS) -o $@
+
+# Windows: the same program as a GUI-subsystem exe (-mwindows), so starting
+# it from Explorer opens no console window.
+ifneq ($(GUI_BIN),)
+$(GUI_BIN): $(CORE_OBJS) $(SIM_OBJS)
+	$(CXX) $(HOST_LDFLAGS) -mwindows $^ $(LDLIBS) -o $@
+endif
 
 fonts:
 	python3 -I $(ROOT)/tools/fonts/gen_fonts.py rom /usr/share/fonts/TTF/DejaVuSans.ttf \

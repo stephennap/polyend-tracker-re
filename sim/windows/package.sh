@@ -2,20 +2,25 @@
 # Packs the Windows simulator into a folder that runs without MSYS2:
 #   sh sim/windows/package.sh OUT_DIR
 # Run from the repository root in an MSYS2 UCRT64 shell, after
-# `make -C sim check` (which builds the exe and the test songs).
+# `make -C sim check` (which builds the exes and the test songs).
 set -eu
 OUT=${1:?usage: package.sh OUT_DIR}
 EXE=build/sim/opentracker-sim.exe
+GUI=build/sim/OpenTracker.exe
 SONGS=build/sim/testsongs
 
-[ -f "$EXE" ] || { echo "package: $EXE missing (run make -C sim first)" >&2; exit 1; }
+for f in "$EXE" "$GUI"; do
+    [ -f "$f" ] || { echo "package: $f missing (run make -C sim first)" >&2; exit 1; }
+done
 [ -d "$SONGS/Projects" ] || { echo "package: $SONGS/Projects missing (run make -C sim check first)" >&2; exit 1; }
 
 rm -rf "$OUT"
 mkdir -p "$OUT/sd-card" "$OUT/licenses"
-# Without the debug info (-g) the exe is a fraction of the size.
+# Without the debug info (-g) the exes are a fraction of the size.
+# OpenTracker.exe: double-click, no console, finds sd-card/ next to it.
+# opentracker-sim.exe: the same program for a terminal (--help, --list-midi).
+strip -o "$OUT/OpenTracker.exe" "$GUI"
 strip -o "$OUT/opentracker-sim.exe" "$EXE"
-cp sim/windows/OpenTracker.bat "$OUT/"
 cp sim/windows/README.txt "$OUT/"
 # The card: generated test songs (Projects/) and their source samples.
 cp -R "$SONGS"/. "$OUT/sd-card/"

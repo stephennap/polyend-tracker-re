@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -27,6 +28,7 @@
 #include "canvas.h"
 #include "host_hal.h"
 #include "host_midi.h"
+#include "host_os.h"
 #include "host_storage.h"
 #include "sim_usb_storage.h"
 #include "panel.h"
@@ -120,6 +122,13 @@ bool parseArgs(int argc, char** argv, Options& o) {
     if (const char* e = std::getenv("OT_SIM_BUSY")) o.busyDisplay = o.busyDisplay && std::atoi(e) != 0;
     if (const char* e = std::getenv("OT_SIM_ROM_TEXT")) o.romText = o.romText || std::atoi(e) == 1;
     if (o.sd.empty()) {
+        // Portable layout (the Windows package): a card folder next to the exe.
+        const std::string exeDir = executableDir();
+        std::error_code ec;
+        if (!exeDir.empty() && std::filesystem::is_directory(std::filesystem::u8path(exeDir + "/sd-card"), ec)) {
+            o.sd = exeDir + "/sd-card";
+            return true;
+        }
 #ifdef _WIN32
         // USERPROFILE first: under MSYS2, HOME can be a POSIX-style path.
         const char* home = std::getenv("USERPROFILE");
@@ -1018,10 +1027,37 @@ int runInteractive(Machine& m, const Options& o) {
 
 }  // namespace
 
+// The windowed build (OpenTracker.exe on Windows) has no console: errors
+// are shown in a message box, pointing at the log file.
+void showStartError(bool windowed, const std::string& logPath) {
+    if (!windowed) return;
+    const std::string msg = logPath.empty()
+                                ? std::string("OpenTracker could not start.")
+                                : "OpenTracker could not start. Details are in\n" + logPath;
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenTracker simulator", msg.c_str(), nullptr);
+}
+
 int main(int argc, char** argv) {
     SDL_SetMainReady();
+    const bool windowed = outputHasNowhereToGo();
     Options o;
-    if (!parseArgs(argc, argv, o)) return 2;
+    if (!parseArgs(argc, argv, o)) {
+        if (windowed)
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "OpenTracker simulator",
+                                     "Unknown or incomplete option.\n"
+                                     "Run opentracker-sim.exe --help in a terminal for the list.",
+                                     nullptr);
+        return 2;
+    }
+    // Windowed: stdout/stderr go to "<sd>.log" next to the card folder (like
+    // the "<sd>.eeprom" config file).
+    std::string logPath;
+    if (windowed) {
+        std::string sdPath = o.sd;
+        while (sdPath.size() > 1 && (sdPath.back() == '/' || sdPath.back() == '\\')) sdPath.pop_back();
+        logPath = sdPath + ".log";
+        if (!redirectOutputTo(logPath)) logPath.clear();
+    }
     if (o.listMidi) {
         HostMidi::listDevices();
         return 0;
@@ -1031,10 +1067,15 @@ int main(int argc, char** argv) {
     m.display.setRomFontsOnly(o.romFonts);
     if (o.busyDisplay) m.display.setBusyClock(&m.clock);
     ot::setRomTextMode(o.romText ? ot::kRomText : ot::kRomGlyphs);
-    if (!m.start(o, headless)) return 1;
+    if (!m.start(o, headless)) {
+        showStartError(windowed, logPath);
+        return 1;
+    }
     if (!headless) {
         if (m.audio) m.audio->start();   // App::init already started it; harmless
-        return runInteractive(m, o);
+        const int rc = runInteractive(m, o);
+        if (rc != 0) showStartError(windowed, logPath);
+        return rc;
     }
     Headless h{m, o.panelShot};
     if (m.audio) m.audio->start();

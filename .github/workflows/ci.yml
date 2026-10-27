@@ -69,8 +69,9 @@ jobs:
           if-no-files-found: ignore
 
   # The same simulator checks on Windows (MSYS2 UCRT64, sim/README.md), then
-  # the ready-to-run package: the static exe, a launcher and the test songs
-  # on a card folder (sim/windows/package.sh). Download it from the run page.
+  # the ready-to-run package: the static exes (OpenTracker.exe windowed,
+  # opentracker-sim.exe for a terminal) and the test songs on a card folder
+  # (sim/windows/package.sh). Download it from the run page.
   sim-windows:
     runs-on: windows-2025
     timeout-minutes: 30   # normally ~10 minutes; pacman or a stuck check otherwise holds the runner 6 h
@@ -101,11 +102,18 @@ jobs:
               | grep -vE "^(g\+\+|ar) |allow-fail" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done
             exit 1
           fi
-      - name: The exe needs only system DLLs
+      - name: The exes need only system DLLs; OpenTracker.exe is windowed
         run: |
-          # A static link: no libstdc++ / libwinpthread / SDL2 DLL next to it.
-          if objdump -p build/sim/opentracker-sim.exe | grep -iE "DLL Name: (lib|SDL)"; then
-            echo "::error::opentracker-sim.exe depends on a non-system DLL"
+          # A static link: no libstdc++ / libwinpthread / SDL2 DLL next to them.
+          for exe in opentracker-sim.exe OpenTracker.exe; do
+            if objdump -p "build/sim/$exe" | grep -iE "DLL Name: (lib|SDL)"; then
+              echo "::error::$exe depends on a non-system DLL"
+              exit 1
+            fi
+          done
+          # GUI subsystem: started from Explorer it opens no console window.
+          if ! objdump -p build/sim/OpenTracker.exe | grep -q "(Windows GUI)"; then
+            echo "::error::OpenTracker.exe is not a GUI-subsystem exe"
             exit 1
           fi
       - name: Package

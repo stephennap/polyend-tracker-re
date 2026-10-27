@@ -17,16 +17,25 @@ make -C reimpl/sim check           # headless smoke test -> build/sim/smoke*.png
 
 ### Windows (MSYS2)
 
-Builds with MSYS2's UCRT64 GCC. The result, `build/sim/opentracker-sim.exe`,
-is linked statically: it needs no DLLs and runs from PowerShell, cmd or
-Explorer.
+Builds with MSYS2's UCRT64 GCC. Two exes come from the same objects, both
+linked statically (no DLLs):
+
+- `build/sim/opentracker-sim.exe`: console program, prints its log in the
+  terminal; the checks use it.
+- `build/sim/OpenTracker.exe`: windowed (GUI subsystem), for starting from
+  Explorer or a shortcut. No console window; stdout/stderr go to
+  `<sd>.log` next to the card folder, and a start-up failure shows a message
+  box.
+
+Both use a folder `sd-card` next to the exe as the card when it exists and
+no `--sd` is given (the package layout below).
 
 1. Install MSYS2 (https://www.msys2.org, or `winget install MSYS2.MSYS2`).
 2. In the **MSYS2 UCRT64** shell:
 
    ```
    pacman -S --needed make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-pkgconf
-   make -C sim -j                     # -> build/sim/opentracker-sim.exe
+   make -C sim -j                     # -> build/sim/opentracker-sim.exe, OpenTracker.exe
    make -C sim check                  # same headless checks as on Linux
    ```
 
@@ -35,8 +44,8 @@ Explorer.
 3. Run `build\sim\opentracker-sim.exe`. The default SD card folder is
    `%USERPROFILE%\.opentracker-sd`.
 
-A ready-to-run package (the exe, `OpenTracker.bat`, a card folder with the
-test songs, `README.txt`) is built by the CI job `sim-windows`; download it
+A ready-to-run package (both exes, a `sd-card` folder with the test songs,
+`README.txt`) is built by the CI job `sim-windows`; download it
 from the run's Artifacts. Locally, after `make -C sim check`:
 `sh sim/windows/package.sh dist/OpenTracker-Sim-Windows`.
 
