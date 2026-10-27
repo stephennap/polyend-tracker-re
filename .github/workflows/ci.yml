@@ -1,4 +1,5 @@
-# Host unit tests, headless simulator checks, the firmware build with the
+# Host unit tests, headless simulator checks (Linux and Windows, plus the
+# Windows simulator package as a downloadable artifact), the firmware build with the
 # flash / stack-headroom / libm checks, and the .ptf image as a downloadable
 # artifact.
 # On pull requests also a memory report: flash, SRAM, SDRAM and stack
@@ -64,6 +65,62 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sim-check-${{ github.sha }}
+          path: build/sim/*.png
+          if-no-files-found: ignore
+
+  # The same simulator checks on Windows (MSYS2 UCRT64, sim/README.md), then
+  # the ready-to-run package: the static exe, a launcher and the test songs
+  # on a card folder (sim/windows/package.sh). Download it from the run page.
+  sim-windows:
+    runs-on: windows-2025
+    timeout-minutes: 30   # normally ~10 minutes; pacman or a stuck check otherwise holds the runner 6 h
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # The sim scripts and check scripts are read as LF text.
+      - name: Keep LF line endings
+        shell: pwsh
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e   # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Simulator checks
+        run: |
+          set -o pipefail
+          if ! make -C sim -j"$(nproc)" check 2>&1 | tee sim-check.log; then
+            # Errors as annotations: readable on the run page without log access.
+            grep -E "error:|\*\*\*|script:[0-9]+|OVER BUDGET|FAIL|fail" sim-check.log \
+              | grep -vE "^(g\+\+|ar) |allow-fail" | head -10 | while IFS= read -r line; do echo "::error::${line}"; done
+            exit 1
+          fi
+      - name: The exe needs only system DLLs
+        run: |
+          # A static link: no libstdc++ / libwinpthread / SDL2 DLL next to it.
+          if objdump -p build/sim/opentracker-sim.exe | grep -iE "DLL Name: (lib|SDL)"; then
+            echo "::error::opentracker-sim.exe depends on a non-system DLL"
+            exit 1
+          fi
+      - name: Package
+        run: sh sim/windows/package.sh dist/OpenTracker-Sim-Windows
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTracker-Sim-Windows-${{ github.sha }}
+          path: dist/OpenTracker-Sim-Windows
+          if-no-files-found: error
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-windows-check-${{ github.sha }}
           path: build/sim/*.png
           if-no-files-found: ignore
 

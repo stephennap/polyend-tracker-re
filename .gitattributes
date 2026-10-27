@@ -1,3 +1,8 @@
-# Shell scripts must keep LF line endings, also in a Windows checkout
-# with core.autocrlf=true (sim/README.md, "Windows (MSYS2)").
+# Shell scripts and simulator scripts must keep LF line endings, also in a
+# Windows checkout with core.autocrlf=true (sim/README.md, "Windows (MSYS2)").
 *.sh text eol=lf
+sim/scripts/*.txt text eol=lf
+sim/visual/*.scene text eol=lf
+# Files shipped in the Windows package: CRLF for cmd.exe and Notepad.
+*.bat text eol=crlf
+sim/windows/README.txt text eol=crlf

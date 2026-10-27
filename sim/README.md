@@ -35,6 +35,11 @@ Explorer.
 3. Run `build\sim\opentracker-sim.exe`. The default SD card folder is
    `%USERPROFILE%\.opentracker-sd`.
 
+A ready-to-run package (the exe, `OpenTracker.bat`, a card folder with the
+test songs, `README.txt`) is built by the CI job `sim-windows`; download it
+from the run's Artifacts. Locally, after `make -C sim check`:
+`sh sim/windows/package.sh dist/OpenTracker-Sim-Windows`.
+
 Clone with LF line endings (`git config core.autocrlf false` before the
 checkout, or `git clone -c core.autocrlf=false ...`): the check scripts are
 `sh` scripts. `.gitattributes` keeps `*.sh` at LF either way.
