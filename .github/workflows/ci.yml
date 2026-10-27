@@ -112,7 +112,10 @@ jobs:
             fi
           done
           # GUI subsystem: started from Explorer it opens no console window.
-          if ! objdump -p build/sim/OpenTracker.exe | grep -q "(Windows GUI)"; then
+          # (No pipe into grep -q: with pipefail, grep closing the pipe early
+          # makes objdump fail with SIGPIPE.)
+          headers=$(objdump -p build/sim/OpenTracker.exe)
+          if [[ "$headers" != *"(Windows GUI)"* ]]; then
             echo "::error::OpenTracker.exe is not a GUI-subsystem exe"
             exit 1
           fi
