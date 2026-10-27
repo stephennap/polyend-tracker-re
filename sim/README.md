@@ -76,6 +76,7 @@ Options:
 | `--no-audio` / `--no-midi` | skip the audio device / MIDI |
 | `--midi-in NAME` / `--midi-out NAME` | Windows: MIDI devices for the app's USB MIDI port |
 | `--list-midi` | print the MIDI devices and exit |
+| `--midi-log` | print every MIDI byte sent and received to stderr (clock and active sensing are counted, not printed) |
 | `--demo` | renderer and input demo instead of the app |
 | `--quit-after MS` | exit after MS milliseconds |
 | `--script FILE` | headless: replay a script (see below) |

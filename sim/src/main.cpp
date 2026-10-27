@@ -50,7 +50,7 @@ struct Options {
     bool busyDisplay = true;                  // FT81x pacing model (off: --instant-display / OT_SIM_BUSY = 0)
     std::string script, screenshot, wav;
     std::string midiIn, midiOut;   // Windows: MIDI device name substrings
-    bool listMidi = false;
+    bool listMidi = false, midiLog = false;
     float lineInTone = 0.0f;   // headless: synthetic line input (Hz), 0 = none
     long quitAfterMs = -1;
 };
@@ -66,6 +66,7 @@ void usage() {
         "  --midi-in NAME    Windows: MIDI input device whose name contains NAME\n"
         "  --midi-out NAME   Windows: MIDI output device whose name contains NAME\n"
         "  --list-midi       print the MIDI devices and exit\n"
+        "  --midi-log        print the MIDI bytes sent and received\n"
         "  --demo            renderer/input demo instead of the app\n"
         "  --quit-after MS   exit after MS milliseconds (interactive mode)\n"
         "headless (no window, virtual time):\n"
@@ -95,6 +96,7 @@ bool parseArgs(int argc, char** argv, Options& o) {
         if (a == "--no-audio") { o.noAudio = true; continue; }
         if (a == "--no-midi") { o.noMidi = true; continue; }
         if (a == "--list-midi") { o.listMidi = true; continue; }
+        if (a == "--midi-log") { o.midiLog = true; continue; }
         if (a == "--midi-in" && next(o.midiIn)) continue;
         if (a == "--midi-out" && next(o.midiOut)) continue;
         if (a == "--demo") { o.demo = true; continue; }
@@ -188,6 +190,7 @@ struct Machine {
             std::fprintf(stderr, "cannot use SD folder %s\n", o.sd.c_str());
             return false;
         }
+        midi.setLog(o.midiLog);
         if (!o.noMidi && !headless) midi.open(o.midiIn, o.midiOut);
         if (headless) {
             audio = &manualAudio;

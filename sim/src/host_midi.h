@@ -27,12 +27,17 @@ public:
     bool active() const { return impl_ != nullptr; }
     std::string describe() const;   // status line text
     static void listDevices();      // prints the host MIDI devices to stdout
+    // --midi-log: every byte sent / received is printed to stderr.
+    void setLog(bool on) { log_ = on; }
     bool send(ot::MidiPortId port, const uint8_t* data, uint32_t len) override;
     uint32_t receive(ot::MidiPortId port, uint8_t* dst, uint32_t cap) override;
 
 private:
+    bool sendRaw(ot::MidiPortId port, const uint8_t* data, uint32_t len);
+    uint32_t receiveRaw(ot::MidiPortId port, uint8_t* dst, uint32_t cap);
     struct Impl;
     Impl* impl_ = nullptr;
+    bool log_ = false;
 };
 
 }  // namespace sim

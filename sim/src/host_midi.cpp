@@ -90,7 +90,7 @@ void HostMidi::listDevices() {
                 "connect them with aconnect (aconnect -l lists the system's ports).\n");
 }
 
-bool HostMidi::send(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
+bool HostMidi::sendRaw(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
     if (!impl_) return true;   // swallowed
     const int p = port == ot::MidiPortId::kUsb ? 1 : 0;
     for (uint32_t i = 0; i < len; ++i) {
@@ -107,7 +107,7 @@ bool HostMidi::send(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
     return true;
 }
 
-uint32_t HostMidi::receive(ot::MidiPortId port, uint8_t* dst, uint32_t cap) {
+uint32_t HostMidi::receiveRaw(ot::MidiPortId port, uint8_t* dst, uint32_t cap) {
     if (!impl_) return 0;
     impl_->pump();
     const int p = port == ot::MidiPortId::kUsb ? 1 : 0;
@@ -380,13 +380,13 @@ void HostMidi::listDevices() {
     for (size_t i = 0; i < outs.size(); ++i) std::printf("  %zu: %s\n", i, outs[i].c_str());
 }
 
-bool HostMidi::send(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
+bool HostMidi::sendRaw(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
     if (!impl_ || !impl_->out || port != ot::MidiPortId::kUsb) return true;   // swallowed
     for (uint32_t i = 0; i < len; ++i) impl_->outByte(data[i]);
     return true;
 }
 
-uint32_t HostMidi::receive(ot::MidiPortId port, uint8_t* dst, uint32_t cap) {
+uint32_t HostMidi::receiveRaw(ot::MidiPortId port, uint8_t* dst, uint32_t cap) {
     if (!impl_ || !impl_->in || port != ot::MidiPortId::kUsb) return 0;
     impl_->requeueSysex();
     std::lock_guard<std::mutex> lk(impl_->mu);
@@ -407,8 +407,48 @@ bool HostMidi::open(const std::string&, const std::string&) { return false; }
 std::string HostMidi::describe() const { return "off"; }
 void HostMidi::listDevices() { std::printf("this build has no MIDI backend\n"); }
 
-bool HostMidi::send(ot::MidiPortId, const uint8_t*, uint32_t) { return true; }
-uint32_t HostMidi::receive(ot::MidiPortId, uint8_t*, uint32_t) { return 0; }
+bool HostMidi::sendRaw(ot::MidiPortId, const uint8_t*, uint32_t) { return true; }
+uint32_t HostMidi::receiveRaw(ot::MidiPortId, uint8_t*, uint32_t) { return 0; }
 #endif
+
+// ---------------------------------------------------------------------------
+// All backends: optional byte log. MIDI clock (F8) and active sensing (FE) are
+// counted instead of printed, or they would flood the log.
+namespace {
+void logBytes(const char* dir, ot::MidiPortId port, const uint8_t* b, uint32_t n) {
+    static uint32_t skipped[2] = {};
+    char line[3 * 64 + 1];
+    int len = 0;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (b[i] == 0xF8 || b[i] == 0xFE) {
+            ++skipped[dir[0] == 'i' ? 0 : 1];
+            continue;
+        }
+        if (len >= int(sizeof(line)) - 4) {
+            std::fprintf(stderr, "midi %s %s:%s ...\n", dir, port == ot::MidiPortId::kUsb ? "usb" : "din", line);
+            len = 0;
+        }
+        len += std::snprintf(line + len, sizeof(line) - size_t(len), " %02X", b[i]);
+    }
+    uint32_t& sk = skipped[dir[0] == 'i' ? 0 : 1];
+    if (len)
+        std::fprintf(stderr, "midi %s %s:%s\n", dir, port == ot::MidiPortId::kUsb ? "usb" : "din", line);
+    if (sk >= 96) {   // one line per 4 beats of clock at 24 ppqn
+        std::fprintf(stderr, "midi %s: %u clock/sensing bytes\n", dir, unsigned(sk));
+        sk = 0;
+    }
+}
+}  // namespace
+
+bool HostMidi::send(ot::MidiPortId port, const uint8_t* data, uint32_t len) {
+    if (log_ && len) logBytes("out", port, data, len);
+    return sendRaw(port, data, len);
+}
+
+uint32_t HostMidi::receive(ot::MidiPortId port, uint8_t* dst, uint32_t cap) {
+    const uint32_t n = receiveRaw(port, dst, cap);
+    if (log_ && n) logBytes("in", port, dst, n);
+    return n;
+}
 
 }  // namespace sim
