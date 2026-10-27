@@ -124,12 +124,15 @@ jobs:
           name: OpenTracker-Sim-Windows-${{ github.sha }}
           path: dist/OpenTracker-Sim-Windows
           if-no-files-found: error
-      - name: Upload screenshots
+      - name: Upload screenshots and sim logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: sim-windows-check-${{ github.sha }}
-          path: build/sim/*.png
+          path: |
+            sim-check.log
+            build/sim/*.png
+            build/sim/testsongs-check/*/sim.log
           if-no-files-found: ignore
 
   firmware:
