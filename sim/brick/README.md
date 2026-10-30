@@ -9,12 +9,23 @@ notes are at the end of this file.
 
 ## Install
 
-1. Build (below) or download the `brick` CI artifact.
-2. Copy `Apps/OpenTracker/` to the `Apps/` folder of the Brick's SD card
-   (stock TrimUI OS).
-3. Start **OpenTracker** from the Apps list.
+Build (below) or download the `brick` CI artifact. It has one folder per
+launcher.
 
-Everything stays in `Apps/OpenTracker/`:
+**Knulli** (or another Batocera-based system):
+
+1. Copy the contents of `knulli/ports/` (`OpenTracker.sh` and the
+   `opentracker/` folder) to `roms/ports/` on the SD card
+   (`/userdata/roms/ports/` on the device).
+2. In EmulationStation, update the game lists (Start > Game settings >
+   Update gamelists), or restart.
+3. Start **OpenTracker** from **Ports**. To quit, press SELECT + MENU.
+
+**Stock TrimUI OS**: copy `stock/Apps/OpenTracker/` to `Apps/` on the SD card
+and start **OpenTracker** from the Apps list.
+
+Everything stays in the app folder (`ports/opentracker/` on Knulli,
+`Apps/OpenTracker/` on the stock OS):
 
 | File | What it holds |
 |---|---|
@@ -51,7 +62,7 @@ Edit `sd-card.keys.txt` to change any of this. A line is
 With Docker (Linux, macOS, WSL), from the repository root:
 
 ```
-sh sim/brick/build.sh            # -> dist/OpenTracker-Brick/Apps/OpenTracker
+sh sim/brick/build.sh            # -> dist/OpenTracker-Brick/{knulli,stock}
 ```
 
 Without the script: `docker build -t opentracker-brick sim/brick`, then
@@ -76,14 +87,18 @@ build/sim/opentracker-sim --handheld
   `controller "<name>"`. Otherwise it shows `joystick "<name>"`, and each press
   logs `joystick button N (unmapped)`. Map those with `JOY N = A` lines in
   `sd-card.keys.txt`. Alternatively, put an SDL mapping line in
-  `gamecontrollerdb.txt` next to `launch.sh`. If A/B or X/Y come out swapped,
-  swap them in the map.
+  `gamecontrollerdb.txt` in the app folder. On Knulli, `OpenTracker.sh` also
+  hands SDL the system's controller database when it finds one. If A/B or X/Y
+  come out swapped, swap them in the map.
 - **Screen**: the log prints `display WxH`. The image keeps its 5:3 shape with
-  black bars. If nothing shows, try `SDL_VIDEODRIVER=mali` or `kmsdrm` in
-  `launch.sh`.
+  black bars. If nothing shows, try `SDL_VIDEODRIVER=mali` or `kmsdrm` in the
+  launch script (`OpenTracker.sh` or `launch.sh`).
 - **Audio**: through SDL's audio, at 44.1 kHz. If you hear underruns, the CPU
   meter (Config > General) shows the load.
-- **SDL2 missing**: put `libSDL2-2.0.so.0` built for the device into
-  `Apps/OpenTracker/lib/`.
-- **Other launchers** (NextUI, Knulli, ...): only the packaging differs. The
-  binary and `launch.sh` stay the same.
+- **SDL2 missing**: put `libSDL2-2.0.so.0` built for the device into the app
+  folder's `lib/`.
+- **Knulli hotkeys**: MENU is Knulli's hotkey button. If Knulli catches it
+  (volume, brightness, menus) while OpenTracker runs, set `MENU = NONE` in
+  `sd-card.keys.txt` and give PADS and QUIT to other buttons.
+- **Other launchers** (NextUI, ...): only the packaging differs. The binary
+  stays the same.
