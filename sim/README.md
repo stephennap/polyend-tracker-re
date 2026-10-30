@@ -93,8 +93,17 @@ Options:
 | `--panel` | screenshots show the whole front panel, not only the 800x480 screen |
 | `--wav OUT.wav` | headless: record the rendered audio |
 | `--instant-display` | show every frame at once (also `OT_SIM_BUSY=0`). Default: FT81x frame pacing -- a frame is uploaded, then shown at the next 54 Hz vsync, `frameReady()` false meanwhile |
+| `--handheld` | gamepad controls and only the screen, scaled to the window: the TrimUI Brick build's mode ([brick/README.md](brick/README.md)) |
+| `--fullscreen` | handheld mode: fill the display |
+| `--keymap FILE` | handheld control map (default `<sd>.keys.txt`, written with the defaults when missing) |
 
 The workspace is autosaved to the SD folder when the window closes.
+
+### TrimUI Brick
+
+`make -C sim PLATFORM=brick` cross-builds the simulator for aarch64 Linux,
+starting in handheld mode. `sh sim/brick/build.sh` does this in Docker and packs
+an app for the stock TrimUI launcher. See [brick/README.md](brick/README.md).
 
 ## Front panel and key map
 

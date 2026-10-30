@@ -26,6 +26,7 @@
 #include "app/app.h"
 #include "formats/wav.h"
 #include "canvas.h"
+#include "handheld.h"
 #include "host_hal.h"
 #include "host_midi.h"
 #include "host_os.h"
@@ -55,6 +56,13 @@ struct Options {
     bool listMidi = false, midiLog = false;
     float lineInTone = 0.0f;   // headless: synthetic line input (Hz), 0 = none
     long quitAfterMs = -1;
+    // Handheld mode (TrimUI Brick and similar): gamepad controls, screen only.
+#ifdef OT_HANDHELD_DEFAULT
+    bool handheld = true, fullscreen = true;
+#else
+    bool handheld = false, fullscreen = false;
+#endif
+    std::string keymap;   // handheld control map, default "<sd>.keys.txt"
 };
 
 void usage() {
@@ -71,6 +79,10 @@ void usage() {
         "  --midi-log        print the MIDI bytes sent and received\n"
         "  --demo            renderer/input demo instead of the app\n"
         "  --quit-after MS   exit after MS milliseconds (interactive mode)\n"
+        "  --handheld        gamepad controls, screen only (TrimUI Brick and similar)\n"
+        "  --panel-mode      the front-panel window (the default unless built for a handheld)\n"
+        "  --fullscreen      handheld mode: fill the display\n"
+        "  --keymap FILE     handheld controls (default <sd>.keys.txt, written when missing)\n"
         "headless (no window, virtual time):\n"
         "  --script FILE     replay scripted input (see README)\n"
         "  --screenshot PNG  save the framebuffer at the end\n"
@@ -111,6 +123,10 @@ bool parseArgs(int argc, char** argv, Options& o) {
         if (a == "--wav" && next(o.wav)) continue;
         if (a == "--line-in-tone" && next(v)) { o.lineInTone = float(std::atof(v.c_str())); continue; }
         if (a == "--quit-after" && next(v)) { o.quitAfterMs = std::atol(v.c_str()); continue; }
+        if (a == "--handheld") { o.handheld = true; continue; }
+        if (a == "--panel-mode") { o.handheld = false; continue; }
+        if (a == "--fullscreen") { o.fullscreen = true; continue; }
+        if (a == "--keymap" && next(o.keymap)) continue;
         if (a == "-h" || a == "--help") { usage(); std::exit(0); }
         std::fprintf(stderr, "unknown or incomplete option: %s\n", a.c_str());
         usage();
@@ -1073,7 +1089,24 @@ int main(int argc, char** argv) {
     }
     if (!headless) {
         if (m.audio) m.audio->start();   // App::init already started it; harmless
-        const int rc = runInteractive(m, o);
+        int rc;
+        if (o.handheld) {
+            std::string sdPath = o.sd;
+            while (sdPath.size() > 1 && (sdPath.back() == '/' || sdPath.back() == '\\')) sdPath.pop_back();
+            HandheldHost hh{m.input,
+                            m.display,
+                            m.leds,
+                            [&m] { m.step(); },
+                            o.keymap.empty() ? sdPath + ".keys.txt" : o.keymap,
+                            o.fullscreen,
+                            o.scale,
+                            o.quitAfterMs};
+            rc = runHandheld(hh);
+            m.shutdown();
+            SDL_Quit();
+        } else {
+            rc = runInteractive(m, o);
+        }
         if (rc != 0) showStartError(windowed, logPath);
         return rc;
     }

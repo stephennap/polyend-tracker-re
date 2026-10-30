@@ -6,10 +6,25 @@
 # from the same objects, both with WinMM MIDI:
 #   build/sim/opentracker-sim.exe  console program (logs in the terminal; checks)
 #   build/sim/OpenTracker.exe      windowed, no console; logs to "<sd>.log"
+# Handheld (TrimUI Brick, aarch64 Linux): cross build, see brick/README.md.
+#   make -C sim PLATFORM=brick   -> build/brick/opentracker (starts in handheld mode)
 CXX      ?= g++
 ROOT     := ..
 OUT      := $(ROOT)/build/sim
-ifeq ($(OS),Windows_NT)
+ifeq ($(PLATFORM),brick)
+CROSS      ?= aarch64-linux-gnu-
+CXX        := $(CROSS)g++
+OUT        := $(ROOT)/build/brick
+EXE        :=
+SDL_CFLAGS := $(shell pkg-config --cflags sdl2) -DOT_HANDHELD_DEFAULT
+SDL_LIBS   := $(shell pkg-config --libs sdl2)
+# libstdc++/libgcc linked in: the device's may be older than the toolchain's.
+HOST_LDFLAGS := -static-libstdc++ -static-libgcc
+HOST_LIBS  := -lpthread
+GUI_BIN    :=
+# USB MIDI through ALSA only on request: not every handheld OS ships libasound.
+HAVE_ALSA  := $(if $(filter 1,$(BRICK_ALSA)),$(shell pkg-config --exists alsa && echo 1))
+else ifeq ($(OS),Windows_NT)
 # MSYS2 MinGW: static exe (no DLLs next to it), console subsystem so the
 # stderr log stays visible, no SDL2main (main.cpp sets SDL_MAIN_HANDLED).
 EXE        := .exe
@@ -40,6 +55,12 @@ CORE_OBJS := $(patsubst $(ROOT)/src/%.cpp,$(OUT)/obj/%.o,$(CORE_SRCS))
 SIM_SRCS  := $(wildcard src/*.cpp)
 SIM_OBJS  := $(patsubst src/%.cpp,$(OUT)/obj/sim/%.o,$(SIM_SRCS))
 BIN       := $(OUT)/opentracker-sim$(EXE)
+ifeq ($(PLATFORM),brick)
+BIN       := $(OUT)/opentracker
+endif
+# Handheld controls check (gamepad_input.cpp, overlays): no window.
+HANDHELD_CHECK := $(OUT)/handheld-check$(EXE)
+HANDHELD_CHECK_OBJS := $(OUT)/obj/sim/check/handheld_check.o $(filter-out $(OUT)/obj/sim/main.o,$(SIM_OBJS)) $(CORE_OBJS)
 # Image-path check (sim only): SwDisplay + HostStorage, no SDL window.
 JPEG_CHECK      := $(OUT)/jpeg-check$(EXE)
 JPEG_CHECK_OBJS := $(OUT)/obj/sim/check/jpeg_check.o $(addprefix $(OUT)/obj/sim/,sw_display.o canvas.o jpeg_decode.o host_storage.o png.o) \
@@ -81,6 +102,12 @@ $(JPEG_CHECK): $(JPEG_CHECK_OBJS)
 $(VISUAL_DIFF): $(VISUAL_DIFF_OBJS)
 	$(CXX) $(HOST_LDFLAGS) $^ -o $@
 
+$(HANDHELD_CHECK): $(HANDHELD_CHECK_OBJS)
+	$(CXX) $(HOST_LDFLAGS) $^ $(LDLIBS) -o $@
+
+handheld-check: $(HANDHELD_CHECK)
+	$(HANDHELD_CHECK) $(OUT)/handheld
+
 $(BIN): $(CORE_OBJS) $(SIM_OBJS)
 	$(CXX) $(HOST_LDFLAGS) $^ $(LDLIBS) -o $@
 
@@ -120,7 +147,7 @@ keyflow-check: $(BIN)
 # then the visual-diff gate (report-only until the 1.9.5 screens land: remove
 # the ALLOW_FAIL line below to make visual failures fail 'check').
 check: ALLOW_FAIL ?= 1
-check: $(BIN) $(GUI_BIN) $(JPEG_CHECK) visual-diff keyflow-check
+check: $(BIN) $(GUI_BIN) $(JPEG_CHECK) visual-diff keyflow-check handheld-check
 	$(JPEG_CHECK) fixtures $(OUT)/jpeg-check.png
 	rm -rf $(OUT)/check-sd $(OUT)/check-sd.eeprom
 	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy $(BIN) --sd $(OUT)/check-sd \
@@ -146,5 +173,5 @@ testsongs-check: $(BIN)
 clean:
 	rm -rf $(OUT)
 
--include $(CORE_OBJS:.o=.d) $(SIM_OBJS:.o=.d) $(JPEG_CHECK_OBJS:.o=.d) $(VISUAL_DIFF_OBJS:.o=.d)
-.PHONY: all clean fonts check visual-diff testsongs-check
+-include $(CORE_OBJS:.o=.d) $(SIM_OBJS:.o=.d) $(JPEG_CHECK_OBJS:.o=.d) $(VISUAL_DIFF_OBJS:.o=.d)          $(HANDHELD_CHECK_OBJS:.o=.d)
+.PHONY: all clean fonts check visual-diff testsongs-check handheld-check

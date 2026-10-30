@@ -142,6 +142,41 @@ jobs:
             build/sim/testsongs-check/*/sim.log
           if-no-files-found: ignore
 
+  # The simulator for the TrimUI Brick (aarch64 Linux, handheld mode), cross
+  # built in sim/brick/Dockerfile and packed as an Apps/ folder with the test
+  # songs (sim/brick/README.md). Download it from the run page.
+  brick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30   # normally ~10 minutes (docker image, apt); a stuck step otherwise holds the runner 6 h
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build in the cross toolchain image
+        run: |
+          docker build -t opentracker-brick sim/brick
+          docker run --rm -v "$PWD:/src" -w /src -u "$(id -u):$(id -g)" opentracker-brick \
+            sh -c 'make -C sim PLATFORM=brick -j"$(nproc)" &&
+                   aarch64-linux-gnu-strip -o build/brick/opentracker.stripped build/brick/opentracker &&
+                   file build/brick/opentracker.stripped &&
+                   aarch64-linux-gnu-readelf -d build/brick/opentracker.stripped | grep NEEDED'
+      - name: The binary is aarch64 and needs no libstdc++ on the device
+        run: |
+          file build/brick/opentracker.stripped | grep -q "ARM aarch64" || { echo "::error::not an aarch64 binary"; exit 1; }
+          if docker run --rm -v "$PWD:/src" -w /src opentracker-brick \
+               aarch64-linux-gnu-readelf -d build/brick/opentracker.stripped | grep -E "NEEDED.*libstdc\+\+"; then
+            echo "::error::opentracker links libstdc++ dynamically"
+            exit 1
+          fi
+      - name: Test songs
+        run: make -C tools/make_testsongs -j"$(nproc)" run SD="$PWD/build/sim/testsongs"
+      - name: Package
+        run: sh sim/brick/package.sh dist/OpenTracker-Brick
+      - name: Upload the Brick package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTracker-Brick-${{ github.sha }}
+          path: dist/OpenTracker-Brick
+          if-no-files-found: error
+
   firmware:
     runs-on: ubuntu-24.04
     timeout-minutes: 20   # normally a few minutes; a stuck step (apt) otherwise holds the runner 6 h

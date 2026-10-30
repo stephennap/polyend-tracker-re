@@ -1,0 +1,6 @@
+{
+  "label": "OpenTracker",
+  "icon": "icon.png",
+  "launch": "launch.sh",
+  "description": "OpenTracker: open-source firmware for the original Polyend Tracker"
+}
